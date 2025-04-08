@@ -1,5 +1,5 @@
 
-import React, { ReactNode, useEffect } from 'react';
+import React, { ReactNode, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -14,6 +14,7 @@ interface AdminLayoutProps {
 const AdminLayout = ({ children }: AdminLayoutProps) => {
   const navigate = useNavigate();
   const { logout, currentUser, isAuthenticated, isAdmin } = useAuth();
+  const [isAuthorized, setIsAuthorized] = useState(false);
   
   useEffect(() => {
     // Check if logged in and is admin
@@ -29,7 +30,9 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     });
     
     if (!token || adminStatus !== 'true') {
-      // Only show toast and redirect if there's no valid admin session
+      console.log("Admin authorization failed - redirecting to login");
+      
+      // Only show toast if actually navigating away
       if (!token) {
         toast({
           title: "Authentication Required",
@@ -43,8 +46,12 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
           variant: "destructive"
         });
       }
+      
       navigate('/admin-login');
-      return;
+    } else {
+      // User is authenticated and is an admin
+      console.log("Admin authorization successful - allowing access");
+      setIsAuthorized(true);
     }
   }, [navigate, isAuthenticated, isAdmin]);
   
@@ -52,6 +59,12 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     logout();
     navigate('/admin-login');
   };
+  
+  // Only render admin content when authorized
+  if (!isAuthorized) {
+    // Return empty or minimal content while checking authorization
+    return null;
+  }
   
   const userInitials = currentUser?.name 
     ? currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase()
