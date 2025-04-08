@@ -1,285 +1,396 @@
 
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getAllArtworks, createArtwork, updateArtwork, deleteArtwork, ArtworkData } from '@/services/api';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
 import { Card } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { useToast } from "@/hooks/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import ArtworkForm from "@/components/ArtworkForm";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useNavigate } from 'react-router-dom';
+import { API_URL } from '@/config';
+
+interface Artwork {
+  id: string;
+  title: string;
+  artist: string;
+  description: string;
+  price: number;
+  image_url: string;
+  dimensions: string;
+  medium: string;
+  year: number;
+  status: 'available' | 'sold';
+}
 
 const AdminArtworks = () => {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isAlertDialogOpen, setIsAlertDialogOpen] = useState(false);
-  const [selectedArtwork, setSelectedArtwork] = useState<ArtworkData | null>(null);
-  const [artworkToDelete, setArtworkToDelete] = useState<ArtworkData | null>(null);
+  const [artworks, setArtworks] = useState<Artwork[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [title, setTitle] = useState<string>('');
+  const [artist, setArtist] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [price, setPrice] = useState<string>('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState<string>('');
+  const [medium, setMedium] = useState<string>('');
+  const [year, setYear] = useState<string>(new Date().getFullYear().toString());
+  const [editMode, setEditMode] = useState<boolean>(false);
+  const [currentArtworkId, setCurrentArtworkId] = useState<string | null>(null);
   
-  // Fetch all artworks
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['artworks'],
-    queryFn: getAllArtworks,
-  });
-
-  // Create artwork mutation
-  const createArtworkMutation = useMutation({
-    mutationFn: createArtwork,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['artworks'] });
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    // Check if admin is logged in
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      navigate('/admin-login');
+      return;
+    }
+    
+    fetchArtworks();
+  }, [navigate]);
+  
+  const fetchArtworks = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/artworks`);
+      const data = await response.json();
+      
+      if (data.artworks) {
+        setArtworks(data.artworks);
+      } else {
+        setArtworks([]);
+      }
+    } catch (error) {
+      console.error('Error fetching artworks:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load artworks. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setImageFile(file);
+      
+      // Create a preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!title || !artist || !description || !price || !imageFile || !dimensions || !medium || !year) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all fields and upload an image.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      navigate('/admin-login');
+      return;
+    }
+    
+    // Create form data for file upload
+    const formData = new FormData();
+    formData.append('title', title);
+    formData.append('artist', artist);
+    formData.append('description', description);
+    formData.append('price', price);
+    formData.append('image', imageFile);
+    formData.append('dimensions', dimensions);
+    formData.append('medium', medium);
+    formData.append('year', year);
+    formData.append('status', 'available');
+    
+    try {
+      setLoading(true);
+      
+      const url = editMode && currentArtworkId 
+        ? `${API_URL}/artworks/${currentArtworkId}` 
+        : `${API_URL}/artworks`;
+        
+      const method = editMode ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method: method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      // Reset form
+      resetForm();
+      
+      // Refresh artwork list
+      fetchArtworks();
+      
       toast({
         title: "Success",
-        description: "Artwork created successfully",
+        description: editMode ? "Artwork updated successfully" : "Artwork added successfully",
       });
-      setIsDialogOpen(false);
-      setSelectedArtwork(null);
-    },
-    onError: (error) => {
+      
+    } catch (error) {
+      console.error('Error submitting artwork:', error);
       toast({
-        variant: "destructive",
         title: "Error",
-        description: "Failed to create artwork. Please try again.",
-      });
-      console.error("Create artwork error:", error);
-    }
-  });
-
-  // Update artwork mutation
-  const updateArtworkMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string, data: ArtworkData }) => 
-      updateArtwork(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['artworks'] });
-      toast({
-        title: "Success",
-        description: "Artwork updated successfully",
-      });
-      setIsDialogOpen(false);
-      setSelectedArtwork(null);
-    },
-    onError: (error) => {
-      toast({
+        description: `Failed to ${editMode ? 'update' : 'add'} artwork. Please try again.`,
         variant: "destructive",
-        title: "Error",
-        description: "Failed to update artwork. Please try again.",
       });
-      console.error("Update artwork error:", error);
+    } finally {
+      setLoading(false);
     }
-  });
-
-  // Delete artwork mutation
-  const deleteArtworkMutation = useMutation({
-    mutationFn: (id: string) => deleteArtwork(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['artworks'] });
+  };
+  
+  const handleEdit = (artwork: Artwork) => {
+    setTitle(artwork.title);
+    setArtist(artwork.artist);
+    setDescription(artwork.description);
+    setPrice(artwork.price.toString());
+    setImagePreview(artwork.image_url);
+    setDimensions(artwork.dimensions || '');
+    setMedium(artwork.medium || '');
+    setYear(artwork.year?.toString() || new Date().getFullYear().toString());
+    setEditMode(true);
+    setCurrentArtworkId(artwork.id);
+    
+    // Scroll to form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this artwork?')) {
+      return;
+    }
+    
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      navigate('/admin-login');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      const response = await fetch(`${API_URL}/artworks/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      // Refresh artwork list
+      fetchArtworks();
+      
       toast({
         title: "Success",
         description: "Artwork deleted successfully",
       });
-      setIsAlertDialogOpen(false);
-      setArtworkToDelete(null);
-    },
-    onError: (error) => {
+      
+    } catch (error) {
+      console.error('Error deleting artwork:', error);
       toast({
-        variant: "destructive",
         title: "Error",
         description: "Failed to delete artwork. Please try again.",
+        variant: "destructive",
       });
-      console.error("Delete artwork error:", error);
-      setIsAlertDialogOpen(false);
-    }
-  });
-  
-  const handleAddArtwork = () => {
-    setSelectedArtwork(null);
-    setIsDialogOpen(true);
-  };
-  
-  const handleEditArtwork = (artwork: ArtworkData) => {
-    setSelectedArtwork(artwork);
-    setIsDialogOpen(true);
-  };
-  
-  const handleDeleteArtwork = (artwork: ArtworkData) => {
-    setArtworkToDelete(artwork);
-    setIsAlertDialogOpen(true);
-  };
-
-  const handleConfirmDelete = () => {
-    if (artworkToDelete?.id) {
-      deleteArtworkMutation.mutate(artworkToDelete.id);
+    } finally {
+      setLoading(false);
     }
   };
-
-  const handleFormSubmit = (formData: ArtworkData) => {
-    if (selectedArtwork?.id) {
-      updateArtworkMutation.mutate({ 
-        id: selectedArtwork.id, 
-        data: formData 
-      });
-    } else {
-      createArtworkMutation.mutate(formData);
-    }
+  
+  const resetForm = () => {
+    setTitle('');
+    setArtist('');
+    setDescription('');
+    setPrice('');
+    setImageFile(null);
+    setImagePreview(null);
+    setDimensions('');
+    setMedium('');
+    setYear(new Date().getFullYear().toString());
+    setEditMode(false);
+    setCurrentArtworkId(null);
   };
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(price);
-  };
-
-  if (isLoading) {
-    return (
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-2xl font-bold mb-6">Artworks Management</h1>
-        <p>Loading artworks...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-2xl font-bold mb-6">Artworks Management</h1>
-        <p className="text-red-500">Error loading artworks</p>
-      </div>
-    );
-  }
-
-  const artworks = data || [];
-
+  
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Artworks Management</h1>
-        <Button onClick={handleAddArtwork} className="flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Add New Artwork
-        </Button>
-      </div>
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-6">Manage Artworks</h1>
       
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Image</TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead>Artist</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {artworks.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-4">
-                    No artworks found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                artworks.map((artwork: ArtworkData) => (
-                  <TableRow key={artwork.id}>
-                    <TableCell>
-                      <img 
-                        src={artwork.imageUrl} 
-                        alt={artwork.title} 
-                        className="w-16 h-16 object-cover rounded"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = 'https://via.placeholder.com/150';
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">{artwork.title}</TableCell>
-                    <TableCell>{artwork.artist}</TableCell>
-                    <TableCell>{formatPrice(artwork.price)}</TableCell>
-                    <TableCell>
-                      <Badge className={artwork.status === 'available' ? 'bg-green-500' : 'bg-gray-500'}>
-                        {artwork.status.toUpperCase()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => handleEditArtwork(artwork)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          className="text-red-600 hover:bg-red-50"
-                          onClick={() => handleDeleteArtwork(artwork)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+      <Card className="p-6 mb-8">
+        <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Artwork' : 'Add New Artwork'}</h2>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1" htmlFor="title">Title</label>
+              <Input 
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Enter artwork title"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-1" htmlFor="artist">Artist</label>
+              <Input 
+                id="artist"
+                value={artist}
+                onChange={(e) => setArtist(e.target.value)}
+                placeholder="Enter artist name"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-1" htmlFor="price">Price (KSh)</label>
+              <Input 
+                id="price"
+                type="number"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="Enter price"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-1" htmlFor="year">Year</label>
+              <Input 
+                id="year"
+                type="number"
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                placeholder="Enter year"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-1" htmlFor="dimensions">Dimensions</label>
+              <Input 
+                id="dimensions"
+                value={dimensions}
+                onChange={(e) => setDimensions(e.target.value)}
+                placeholder="e.g. 24 x 36 inches"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-1" htmlFor="medium">Medium</label>
+              <Input 
+                id="medium"
+                value={medium}
+                onChange={(e) => setMedium(e.target.value)}
+                placeholder="e.g. Oil on canvas"
+              />
+            </div>
+            
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1" htmlFor="image">Artwork Image</label>
+              <Input 
+                id="image"
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="mb-2"
+              />
+              {imagePreview && (
+                <div className="mt-2">
+                  <p className="text-sm text-gray-500 mb-1">Preview:</p>
+                  <img 
+                    src={imagePreview} 
+                    alt="Artwork preview" 
+                    className="max-h-40 max-w-full object-contain border rounded"
+                  />
+                </div>
               )}
-            </TableBody>
-          </Table>
-        </div>
+            </div>
+            
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1" htmlFor="description">Description</label>
+              <Textarea 
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Enter artwork description"
+                rows={4}
+              />
+            </div>
+          </div>
+          
+          <div className="flex justify-end space-x-2">
+            {editMode && (
+              <Button type="button" variant="outline" onClick={resetForm}>
+                Cancel
+              </Button>
+            )}
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Saving...' : editMode ? 'Update Artwork' : 'Add Artwork'}
+            </Button>
+          </div>
+        </form>
       </Card>
-
-      {/* Artwork Form Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedArtwork ? 'Edit Artwork' : 'Add New Artwork'}
-            </DialogTitle>
-          </DialogHeader>
-          <ArtworkForm
-            initialData={selectedArtwork || undefined}
-            onSubmit={handleFormSubmit}
-            onCancel={() => setIsDialogOpen(false)}
-          />
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isAlertDialogOpen} onOpenChange={setIsAlertDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure you want to delete this artwork?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the
-              artwork and remove it from our servers.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete} className="bg-red-600 hover:bg-red-700">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      
+      <h2 className="text-xl font-semibold mb-4">All Artworks</h2>
+      
+      {loading ? (
+        <p className="text-center py-4">Loading artworks...</p>
+      ) : artworks.length === 0 ? (
+        <p className="text-center py-4">No artworks found.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {artworks.map((artwork) => (
+            <Card key={artwork.id} className="overflow-hidden">
+              <img 
+                src={artwork.image_url} 
+                alt={artwork.title} 
+                className="w-full h-48 object-cover"
+              />
+              <div className="p-4">
+                <h3 className="text-lg font-semibold">{artwork.title}</h3>
+                <p className="text-gray-600">By {artwork.artist}</p>
+                <p className="font-medium mt-2">KSh {artwork.price.toLocaleString()}</p>
+                <p className="text-sm mt-1">Status: {artwork.status}</p>
+                
+                <div className="flex justify-end space-x-2 mt-4">
+                  <Button size="sm" variant="outline" onClick={() => handleEdit(artwork)}>
+                    Edit
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => handleDelete(artwork.id)}>
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

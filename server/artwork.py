@@ -1,3 +1,4 @@
+
 from database import get_db_connection, dict_from_row, json_dumps
 from auth import verify_token
 import json
@@ -200,12 +201,23 @@ def update_artwork(auth_header, artwork_id, artwork_data):
             image_url = %s, dimensions = %s, medium = %s, year = %s, status = %s
         WHERE id = %s
         """
+        
+        # Only update image_url if it's in the data
+        image_url = artwork_data.get("imageUrl", artwork_data.get("image_url"))
+        
+        # If no image_url in data, get the current one
+        if not image_url:
+            cursor.execute("SELECT image_url FROM artworks WHERE id = %s", (artwork_id,))
+            current_img = cursor.fetchone()
+            if current_img:
+                image_url = current_img[0]
+        
         cursor.execute(query, (
             artwork_data.get("title"),
             artwork_data.get("artist"),
             artwork_data.get("description"),
             artwork_data.get("price"),
-            artwork_data.get("imageUrl"),
+            image_url,
             artwork_data.get("dimensions"),
             artwork_data.get("medium"),
             artwork_data.get("year"),

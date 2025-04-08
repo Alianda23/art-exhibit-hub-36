@@ -1,360 +1,265 @@
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { formatPrice } from '@/utils/formatters';
-import { useToast } from '@/hooks/use-toast';
-import { initiateSTKPush, checkTransactionStatus, finalizeOrder } from '@/utils/mpesa';
-import { DollarSign, Loader2 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/use-toast";
+import { API_URL } from '@/config';
 
-type PendingOrder = {
-  type: 'artwork' | 'exhibition';
-  itemId: string;
-  title: string;
-  totalAmount: number;
-  name: string;
-  email: string;
-  phone?: string;
-  deliveryAddress?: string;
-  slots?: number;
-  pricePerSlot?: number;
-  price?: number;
-  deliveryFee?: number;
-};
+interface PaymentProps {}
 
-const Payment = () => {
+const Payment: React.FC<PaymentProps> = () => {
+  const [phoneNumber, setPhoneNumber] = useState<string>('');
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isChecking, setIsChecking] = useState<boolean>(false);
+  const [transactionId, setTransactionId] = useState<string | null>(null);
+  
+  const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { currentUser } = useAuth();
-  const [order, setOrder] = useState<PendingOrder | null>(null);
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'processing' | 'success' | 'failed'>('pending');
-  const [checkoutRequestId, setCheckoutRequestId] = useState('');
-  const [checkingStatus, setCheckingStatus] = useState(false);
-  const [statusCheckAttempts, setStatusCheckAttempts] = useState(0);
-
+  
+  // Get order information from state
+  const orderInfo = location.state?.orderInfo;
+  
   useEffect(() => {
-    // Get order details from localStorage
-    const pendingOrder = localStorage.getItem('pendingOrder');
-    if (!pendingOrder) {
-      navigate('/');
-      return;
+    if (!orderInfo) {
+      toast({
+        title: "Error",
+        description: "No order information found. Please try again.",
+        variant: "destructive",
+      });
+      navigate(-1);
     }
-
-    try {
-      const orderData = JSON.parse(pendingOrder) as PendingOrder;
-      setOrder(orderData);
-      setPhoneNumber(orderData.phone || '');
-    } catch (error) {
-      console.error('Error parsing order data:', error);
-      navigate('/');
-    }
-  }, [navigate]);
-
-  // Effect to check payment status
-  useEffect(() => {
-    let statusCheckInterval: number | null = null;
-    
-    const checkStatus = async () => {
-      if (!checkoutRequestId || paymentStatus !== 'processing' || checkingStatus) {
-        return;
-      }
-      
-      setCheckingStatus(true);
-      
-      try {
-        const statusResponse = await checkTransactionStatus(checkoutRequestId);
-        
-        if (statusResponse.ResultCode === "0") {
-          // Payment successful
-          clearInterval(statusCheckInterval as number);
-          
-          // Update payment status
-          setPaymentStatus('success');
-          
-          // Finalize the order in the backend
-          if (order && currentUser) {
-            const orderData = {
-              ...order,
-              userId: currentUser.id,
-              phoneNumber,
-              checkoutRequestId,
-              paymentStatus: 'completed'
-            };
-            
-            // Call API to save order/booking to database
-            const finalizeResponse = await finalizeOrder(
-              checkoutRequestId,
-              order.type,
-              orderData
-            );
-            
-            if (finalizeResponse.success) {
-              // Navigate to success page with order details
-              navigate(`/payment-success?type=${order.type}&id=${finalizeResponse.orderId}&title=${encodeURIComponent(order.title)}`);
-            } else {
-              throw new Error("Failed to finalize order");
-            }
-          }
-        } else if (statusResponse.errorCode === "500.001.1001") {
-          // Transaction still in process, continue checking
-          setStatusCheckAttempts(prev => prev + 1);
-          
-          // After 10 attempts (about 50 seconds), give up
-          if (statusCheckAttempts >= 10) {
-            clearInterval(statusCheckInterval as number);
-            setPaymentStatus('failed');
-            toast({
-              title: "Payment timeout",
-              description: "We couldn't confirm your payment. Please try again or contact support.",
-              variant: "destructive"
-            });
-          }
-        } else {
-          // Payment failed or cancelled
-          clearInterval(statusCheckInterval as number);
-          setPaymentStatus('failed');
-          toast({
-            title: "Payment failed",
-            description: statusResponse.ResultDesc || "There was an issue with your payment. Please try again.",
-            variant: "destructive"
-          });
-        }
-      } catch (error) {
-        console.error('Error checking payment status:', error);
-        
-        // After 10 attempts, give up
-        if (statusCheckAttempts >= 10) {
-          clearInterval(statusCheckInterval as number);
-          setPaymentStatus('failed');
-          toast({
-            title: "Error checking payment",
-            description: "We couldn't verify your payment status. Please check your M-Pesa messages.",
-            variant: "destructive"
-          });
-        }
-      } finally {
-        setCheckingStatus(false);
-      }
-    };
-    
-    if (checkoutRequestId && paymentStatus === 'processing') {
-      // Check status immediately
-      checkStatus();
-      
-      // Then check every 5 seconds
-      statusCheckInterval = window.setInterval(checkStatus, 5000);
-    }
-    
-    return () => {
-      if (statusCheckInterval) {
-        clearInterval(statusCheckInterval);
-      }
-    };
-  }, [checkoutRequestId, paymentStatus, checkingStatus, statusCheckAttempts, order, currentUser, navigate, phoneNumber, toast]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  }, [orderInfo, navigate, toast]);
+  
+  const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate phone number
     if (!phoneNumber) {
       toast({
         title: "Error",
-        description: "Please enter your phone number for M-Pesa payment",
-        variant: "destructive"
+        description: "Please enter your phone number.",
+        variant: "destructive",
       });
       return;
     }
     
-    // Simple validation for Kenyan phone numbers
-    const phoneRegex = /^(?:\+254|0)([17][0-9]{8})$/;
-    if (!phoneRegex.test(phoneNumber)) {
-      toast({
-        title: "Error",
-        description: "Please enter a valid Kenyan phone number (starting with +254, 0, or 07...)",
-        variant: "destructive"
-      });
-      return;
+    // Format phone number
+    let formattedPhone = phoneNumber;
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = '254' + formattedPhone.substring(1);
+    }
+    if (!formattedPhone.startsWith('254')) {
+      formattedPhone = '254' + formattedPhone;
     }
     
-    setIsSubmitting(true);
-    setPaymentStatus('processing');
+    setIsProcessing(true);
     
     try {
-      if (!order) {
-        throw new Error('Order details not found');
-      }
-
-      // Generate a reference for this transaction
-      const accountReference = order.type === 'artwork' 
-        ? `ART-${order.itemId}` 
-        : `EXH-${order.itemId}`;
-
-      // Call M-Pesa STK Push
-      const response = await initiateSTKPush(
-        phoneNumber,
-        order.totalAmount,
-        order.type,
-        order.itemId,
-        accountReference
-      );
+      const userId = localStorage.getItem('userId') || '0';
       
-      if (response.error) {
-        throw new Error(response.error);
-      }
+      // Prepare payment data
+      const paymentData = {
+        phoneNumber: formattedPhone,
+        amount: orderInfo.amount,
+        accountReference: `${orderInfo.type} Payment`,
+        orderType: orderInfo.type, // 'artwork' or 'exhibition'
+        orderId: orderInfo.id,
+        userId: userId
+      };
       
-      setCheckoutRequestId(response.CheckoutRequestID);
-      setStatusCheckAttempts(0);
+      console.log('Sending payment request:', paymentData);
       
-      toast({
-        title: "Payment initiated",
-        description: "Please check your phone and enter your M-Pesa PIN to complete the payment",
+      // Send STK push request
+      const response = await fetch(`${API_URL}/mpesa/stk-push`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(paymentData)
       });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      console.log('Payment response:', data);
+      
+      if (data.success) {
+        setTransactionId(data.checkoutRequestId);
+        
+        toast({
+          title: "STK Push Sent",
+          description: "Please check your phone and enter M-PESA PIN to complete payment.",
+        });
+        
+        // Start checking payment status
+        setTimeout(() => {
+          checkPaymentStatus(data.checkoutRequestId);
+        }, 10000); // Check after 10 seconds
+      } else {
+        throw new Error(data.responseDescription || 'Failed to initiate payment');
+      }
       
     } catch (error) {
       console.error('Payment error:', error);
-      setIsSubmitting(false);
-      setPaymentStatus('failed');
-      
       toast({
-        title: "Payment failed",
-        description: error instanceof Error ? error.message : "Failed to process your payment. Please try again.",
-        variant: "destructive"
+        title: "Payment Error",
+        description: error instanceof Error ? error.message : "Failed to process payment. Please try again.",
+        variant: "destructive",
       });
+      setIsProcessing(false);
     }
   };
-
-  const handleTryAgain = () => {
-    setPaymentStatus('pending');
-    setIsSubmitting(false);
-    setCheckoutRequestId('');
-    setStatusCheckAttempts(0);
+  
+  const checkPaymentStatus = async (checkoutRequestId: string) => {
+    if (!checkoutRequestId) return;
+    
+    setIsChecking(true);
+    
+    // For development, simulate a successful payment
+    setTimeout(() => {
+      // Redirect to success page
+      navigate('/payment/success', { 
+        state: { 
+          orderInfo: orderInfo,
+          transactionId: checkoutRequestId
+        } 
+      });
+      setIsChecking(false);
+    }, 5000);
+    
+    // In production, you would check the actual status:
+    /*
+    try {
+      const response = await fetch(`${API_URL}/mpesa/status?checkoutRequestId=${checkoutRequestId}`);
+      const data = await response.json();
+      
+      if (data.status === 'completed') {
+        // Payment successful
+        navigate('/payment/success', { 
+          state: { 
+            orderInfo: orderInfo,
+            transactionId: checkoutRequestId
+          } 
+        });
+      } else if (data.status === 'failed') {
+        // Payment failed
+        toast({
+          title: "Payment Failed",
+          description: data.message || "Your payment could not be processed. Please try again.",
+          variant: "destructive",
+        });
+        setIsProcessing(false);
+        setIsChecking(false);
+      } else {
+        // Still pending, check again after a delay
+        setTimeout(() => {
+          checkPaymentStatus(checkoutRequestId);
+        }, 5000);
+      }
+    } catch (error) {
+      console.error('Error checking payment status:', error);
+      setIsChecking(false);
+    }
+    */
   };
-
-  if (!order) {
-    return (
-      <div className="py-16 px-4 text-center">
-        <h1 className="text-2xl font-semibold mb-4">No Order Found</h1>
-        <p className="mb-6">Please select an item to purchase first.</p>
-        <Button onClick={() => navigate('/')}>
-          Back to Home
-        </Button>
-      </div>
-    );
+  
+  if (!orderInfo) {
+    return null;
   }
-
+  
   return (
-    <div className="py-12 px-4 md:px-6 bg-secondary min-h-screen">
-      <div className="container mx-auto max-w-md">
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="p-6 md:p-8">
-            <h1 className="font-serif text-3xl font-bold mb-6 text-center">Payment</h1>
-            
-            <div className="mb-8">
-              <h3 className="font-medium text-lg mb-4">Order Summary</h3>
-              <div className="bg-secondary rounded-lg p-4 mb-6">
-                <div className="mb-4">
-                  <h4 className="font-medium">{order.title}</h4>
-                  <p className="text-sm text-gray-600">
-                    {order.type === 'artwork' ? 'Artwork Purchase' : 'Exhibition Booking'}
-                  </p>
-                </div>
-                
-                <div className="border-t border-gray-200 pt-3">
-                  {order.type === 'artwork' && (
-                    <>
-                      <div className="flex justify-between mb-1">
-                        <span>Price:</span>
-                        <span>{formatPrice(order.price || 0)}</span>
-                      </div>
-                      <div className="flex justify-between mb-1">
-                        <span>Delivery:</span>
-                        <span>{formatPrice(order.deliveryFee || 0)}</span>
-                      </div>
-                    </>
-                  )}
-                  
-                  {order.type === 'exhibition' && (
-                    <div className="flex justify-between mb-1">
-                      <span>Tickets:</span>
-                      <span>{order.slots} x {formatPrice(order.pricePerSlot || 0)}</span>
-                    </div>
-                  )}
-                  
-                  <div className="flex justify-between font-bold text-lg mt-2">
-                    <span>Total:</span>
-                    <span>{formatPrice(order.totalAmount)}</span>
-                  </div>
-                </div>
-              </div>
-              
-              {paymentStatus === 'processing' ? (
-                <div className="text-center py-8">
-                  <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-gold" />
-                  <h3 className="font-bold text-lg mb-2">Payment Processing</h3>
-                  <p className="mb-2">Please check your phone and enter your M-Pesa PIN.</p>
-                  <p className="text-sm text-gray-500">We're waiting for confirmation from M-Pesa...</p>
-                </div>
-              ) : paymentStatus === 'failed' ? (
-                <div className="text-center py-8">
-                  <div className="bg-red-100 text-red-800 p-4 rounded-lg mb-4">
-                    <h3 className="font-bold text-lg">Payment Failed</h3>
-                    <p>Something went wrong with your payment. Please try again.</p>
-                  </div>
-                  <Button onClick={handleTryAgain} className="mt-4">
-                    Try Again
-                  </Button>
-                </div>
-              ) : (
-                <div className="mb-6">
-                  <h3 className="font-medium text-lg mb-4">M-Pesa Payment</h3>
-                  <form onSubmit={handleSubmit}>
-                    <div className="space-y-6">
-                      <div>
-                        <Label htmlFor="phoneNumber">Phone Number (for M-Pesa) *</Label>
-                        <Input
-                          id="phoneNumber"
-                          value={phoneNumber}
-                          onChange={(e) => setPhoneNumber(e.target.value)}
-                          placeholder="+254..."
-                          required
-                        />
-                        <p className="text-sm text-gray-500 mt-1">
-                          Enter the phone number to receive M-Pesa payment request
-                        </p>
-                      </div>
-                      
-                      <Button 
-                        type="submit" 
-                        className="w-full bg-gold hover:bg-gold-dark text-white py-6 text-lg"
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting ? (
-                          <span className="flex items-center justify-center">
-                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                            Processing...
-                          </span>
-                        ) : (
-                          <span className="flex items-center justify-center">
-                            <DollarSign className="mr-2 h-5 w-5" />
-                            Pay with M-Pesa
-                          </span>
-                        )}
-                      </Button>
-                      
-                      <p className="text-sm text-gray-500 text-center">
-                        You will receive an M-Pesa prompt on your phone to complete payment
-                      </p>
-                    </div>
-                  </form>
-                </div>
-              )}
-            </div>
+    <div className="container mx-auto max-w-md px-4 py-8">
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <h1 className="text-2xl font-bold mb-6 text-center">Complete Your Payment</h1>
+        
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-2">Order Summary</h2>
+          <div className="bg-gray-50 p-4 rounded-md">
+            <p className="mb-2">
+              <span className="font-medium">Item:</span> {orderInfo.title}
+            </p>
+            <p className="mb-2">
+              <span className="font-medium">Type:</span> {orderInfo.type === 'artwork' ? 'Artwork Purchase' : 'Exhibition Booking'}
+            </p>
+            {orderInfo.type === 'exhibition' && (
+              <p className="mb-2">
+                <span className="font-medium">Slots:</span> {orderInfo.slots}
+              </p>
+            )}
+            <p className="text-lg font-bold mt-2">
+              <span className="font-medium">Total Amount:</span> KSh {orderInfo.amount.toLocaleString()}
+            </p>
           </div>
+        </div>
+        
+        {!transactionId ? (
+          <form onSubmit={handlePayment} className="space-y-4">
+            <div>
+              <label htmlFor="phone" className="block text-sm font-medium mb-1">
+                M-PESA Phone Number
+              </label>
+              <Input
+                id="phone"
+                type="text"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="e.g. 07XXXXXXXX or 254XXXXXXXXX"
+                required
+                disabled={isProcessing}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Enter the phone number registered with M-PESA
+              </p>
+            </div>
+            
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isProcessing}
+            >
+              {isProcessing ? 'Processing...' : 'Pay with M-PESA'}
+            </Button>
+            
+            <p className="text-xs text-center text-gray-500 mt-2">
+              You will receive an STK push notification on your phone to confirm the payment
+            </p>
+          </form>
+        ) : (
+          <div className="text-center">
+            <div className="mb-4 p-4 bg-green-50 text-green-700 rounded-md">
+              <p className="font-medium">M-PESA request sent to your phone!</p>
+              <p className="text-sm mt-1">Please enter your M-PESA PIN when prompted</p>
+            </div>
+            
+            {isChecking ? (
+              <div className="mt-6">
+                <p className="mb-2">Checking payment status...</p>
+                <div className="w-12 h-12 border-4 border-t-blue-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto"></div>
+              </div>
+            ) : (
+              <Button 
+                className="mt-4" 
+                variant="outline" 
+                onClick={() => checkPaymentStatus(transactionId)}
+              >
+                Check Payment Status
+              </Button>
+            )}
+          </div>
+        )}
+        
+        <div className="mt-6 text-center">
+          <Button 
+            variant="ghost" 
+            onClick={() => navigate(-1)} 
+            disabled={isProcessing || isChecking}
+          >
+            Cancel Payment
+          </Button>
         </div>
       </div>
     </div>

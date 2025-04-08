@@ -1,3 +1,4 @@
+
 from database import get_db_connection, dict_from_row, json_dumps
 from auth import verify_token
 import json
@@ -240,6 +241,16 @@ def update_exhibition(auth_header, exhibition_id, exhibition_data):
     cursor = connection.cursor()
     
     try:
+        # Only update image_url if it's in the data
+        image_url = exhibition_data.get("imageUrl")
+        
+        # If no image_url in data, get the current one
+        if not image_url:
+            cursor.execute("SELECT image_url FROM exhibitions WHERE id = %s", (exhibition_id,))
+            current_img = cursor.fetchone()
+            if current_img:
+                image_url = current_img[0]
+        
         query = """
         UPDATE exhibitions
         SET title = %s, description = %s, location = %s, start_date = %s, end_date = %s,
@@ -253,7 +264,7 @@ def update_exhibition(auth_header, exhibition_id, exhibition_data):
             exhibition_data.get("startDate"),
             exhibition_data.get("endDate"),
             exhibition_data.get("ticketPrice"),
-            exhibition_data.get("imageUrl"),
+            image_url,
             exhibition_data.get("totalSlots"),
             exhibition_data.get("availableSlots"),
             exhibition_data.get("status"),
