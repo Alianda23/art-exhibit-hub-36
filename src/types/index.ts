@@ -1,14 +1,15 @@
 
+// User types
 export interface User {
   id: string;
   name: string;
   email: string;
-  phone?: string;
-  isAdmin: boolean;
+  isAdmin?: boolean;
 }
 
+// Artwork types
 export interface Artwork {
-  id: string;
+  id?: string;
   title: string;
   artist: string;
   description: string;
@@ -18,10 +19,12 @@ export interface Artwork {
   medium?: string;
   year?: number;
   status: 'available' | 'sold';
+  size?: string; // Adding this field to avoid errors
 }
 
+// Exhibition types
 export interface Exhibition {
-  id: string;
+  id?: string;
   title: string;
   description: string;
   location: string;
@@ -34,40 +37,36 @@ export interface Exhibition {
   status: 'upcoming' | 'ongoing' | 'past';
 }
 
-export interface ArtworkOrder {
-  id: string;
-  userId: string;
-  artworkId: string;
-  name: string;
-  email: string;
-  phone: string;
-  deliveryAddress: string;
-  paymentMethod: 'mpesa';
-  paymentStatus: 'pending' | 'completed' | 'failed';
-  orderDate: string;
-  totalAmount: number;
-}
-
-export interface ExhibitionBooking {
-  id: string;
-  userId: string;
-  exhibitionId: string;
-  name: string;
-  email: string;
-  phone: string;
-  slots: number;
-  paymentMethod: 'mpesa';
-  paymentStatus: 'pending' | 'completed' | 'failed';
-  bookingDate: string;
-  totalAmount: number;
-}
-
+// Contact message types
 export interface ContactMessage {
-  id: string;
+  id?: string;
   name: string;
   email: string;
   phone?: string;
   message: string;
-  date: string;
   status: 'new' | 'read' | 'replied';
+  createdAt: string;
+}
+
+// Order types
+export interface Order {
+  id: string;
+  userId: string;
+  itemId: string;
+  itemType: 'artwork' | 'exhibition';
+  quantity: number;
+  totalAmount: number;
+  status: 'pending' | 'paid' | 'cancelled';
+  createdAt: string;
+}
+
+// Ticket types
+export interface Ticket {
+  id: string;
+  orderId: string;
+  userId: string;
+  exhibitionId: string;
+  ticketCode: string;
+  status: 'valid' | 'used' | 'cancelled';
+  createdAt: string;
 }

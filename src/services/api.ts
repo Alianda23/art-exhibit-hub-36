@@ -1,8 +1,6 @@
-
 // API service to connect to the Python backend
 
-// Base URL for the API
-const API_URL = 'http://localhost:8000';
+import { API_URL } from "@/config";
 
 // Interface for auth responses
 interface AuthResponse {
@@ -154,7 +152,8 @@ export const loginAdmin = async (credentials: LoginData): Promise<AuthResponse> 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    const response = await fetch(`${API_URL}/admin-login`, {
+    console.log(`Attempting admin login with ${API_URL}/admin/login`);
+    const response = await fetch(`${API_URL}/admin/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

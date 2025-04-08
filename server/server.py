@@ -1,4 +1,3 @@
-
 import os
 import json
 import http.server
@@ -257,6 +256,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         post_data = {}
         if content_length > 0 and "application/json" in self.headers.get('Content-Type', ''):
             post_data = json.loads(self.rfile.read(content_length).decode('utf-8'))
+            print(f"Parsed JSON data: {post_data}")
         
         # Register user
         if path == '/register':
@@ -317,8 +317,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json_dumps(response).encode())
             return
         
-        # Admin login
-        elif path == '/admin/login':
+        # Admin login - handle both URL formats
+        elif path == '/admin/login' or path == '/admin-login':
             if not post_data:
                 self._set_response(400)
                 self.wfile.write(json_dumps({"error": "Missing login data"}).encode())
@@ -329,6 +329,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self._set_response(400)
                 self.wfile.write(json_dumps({"error": "Email and password required"}).encode())
                 return
+            
+            print(f"POST to {path} with content type: {self.headers.get('Content-Type')}, length: {content_length}")
             
             # Login as admin
             response = login_admin(post_data['email'], post_data['password'])
