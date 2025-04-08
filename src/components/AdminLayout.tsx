@@ -28,25 +28,25 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       localStorageIsAdmin: adminStatus
     });
     
-    if (!token) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to access admin features",
-        variant: "destructive"
-      });
+    if (!token || adminStatus !== 'true') {
+      // Only show toast and redirect if there's no valid admin session
+      if (!token) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to access admin features",
+          variant: "destructive"
+        });
+      } else if (adminStatus !== 'true') {
+        toast({
+          title: "Access Denied",
+          description: "You need admin privileges to access this area",
+          variant: "destructive"
+        });
+      }
       navigate('/admin-login');
       return;
     }
-    
-    if (adminStatus !== 'true') {
-      toast({
-        title: "Access Denied",
-        description: "You need admin privileges to access this area",
-        variant: "destructive"
-      });
-      navigate('/admin-login');
-    }
-  }, [navigate, isAuthenticated, currentUser, isAdmin]);
+  }, [navigate, isAuthenticated, isAdmin]);
   
   const handleLogout = () => {
     logout();

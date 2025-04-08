@@ -1,21 +1,11 @@
 
-import React, { useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { isAdmin } from '@/services/api';
+import React from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, ShoppingBag, Ticket, Image, Calendar } from 'lucide-react';
 
 const Admin = () => {
-  const navigate = useNavigate();
-  
-  // Check if user is an admin
-  useEffect(() => {
-    if (!isAdmin()) {
-      navigate('/admin-login');
-    }
-  }, [navigate]);
-
   return (
     <div className="container mx-auto py-12 px-4">
       <h1 className="text-3xl font-bold mb-8">Admin Dashboard</h1>
