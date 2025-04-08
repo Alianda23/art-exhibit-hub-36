@@ -4,6 +4,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string; // Adding phone property as optional
   isAdmin?: boolean;
 }
 
